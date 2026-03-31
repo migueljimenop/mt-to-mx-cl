@@ -1,162 +1,222 @@
 /* =========================================================
-   MT940 → camt.053 Converter — Frontend Logic
+   MT940 ↔ camt.053 Converter — Frontend Logic
    ========================================================= */
 
 'use strict';
 
 // ---------------------------------------------------------------------------
-// State
+// Mode: 'mt-to-xml' | 'xml-to-mt'
 // ---------------------------------------------------------------------------
-let selectedFile = null;
-let lastParseResult = null;
+let currentMode = 'mt-to-xml';
+
+const MODE = {
+  'mt-to-xml': {
+    parseEndpoint:    '/api/parse',
+    convertEndpoint:  '/api/convert',
+    parseLoadingText: 'Analizando archivo MT940...',
+    convertLoadingText: 'Generando camt.053 XML...',
+    downloadLabel:    'Descargar camt.053 XML',
+  },
+  'xml-to-mt': {
+    parseEndpoint:    '/api/parse-xml',
+    convertEndpoint:  '/api/convert-xml',
+    parseLoadingText: 'Analizando archivo camt.053 XML...',
+    convertLoadingText: 'Generando MT940...',
+    downloadLabel:    'Descargar MT940 .txt',
+  },
+};
 
 // ---------------------------------------------------------------------------
-// DOM references
+// State (per-mode)
 // ---------------------------------------------------------------------------
-const dropZone    = document.getElementById('drop-zone');
-const fileInput   = document.getElementById('file-input');
-const fileInfo    = document.getElementById('file-info');
-const fileName    = document.getElementById('file-name');
-const fileSize    = document.getElementById('file-size');
-const fileRemove  = document.getElementById('file-remove');
-const btnParse    = document.getElementById('btn-parse');
-const btnDownload = document.getElementById('btn-download');
-const messages    = document.getElementById('messages');
-const loading     = document.getElementById('loading');
-const loadingText = document.getElementById('loading-text');
-const previewSec  = document.getElementById('preview-section');
-const previewMeta = document.getElementById('preview-meta');
-const stmtsContainer = document.getElementById('statements-container');
+const state = {
+  'mt-to-xml': { file: null },
+  'xml-to-mt': { file: null },
+};
 
 // ---------------------------------------------------------------------------
-// Utility helpers
+// DOM references (shared)
+// ---------------------------------------------------------------------------
+const messages     = document.getElementById('messages');
+const loading      = document.getElementById('loading');
+const loadingText  = document.getElementById('loading-text');
+const previewSec   = document.getElementById('preview-section');
+const previewMeta  = document.getElementById('preview-meta');
+const stmtsCont    = document.getElementById('statements-container');
+
+// Mode tabs
+const tabMtToXml  = document.getElementById('tab-mt-to-xml');
+const tabXmlToMt  = document.getElementById('tab-xml-to-mt');
+const panelMtToXml = document.getElementById('panel-mt-to-xml');
+const panelXmlToMt = document.getElementById('panel-xml-to-mt');
+
+// MT940 → XML panel
+const dzMt        = document.getElementById('dz-mt');
+const fiMt        = document.getElementById('fi-mt');
+const fiMtInfo    = document.getElementById('fi-mt-info');
+const fiMtName    = document.getElementById('fi-mt-name');
+const fiMtSize    = document.getElementById('fi-mt-size');
+const fiMtRemove  = document.getElementById('fi-mt-remove');
+const btnMtParse  = document.getElementById('btn-mt-parse');
+const btnMtDl     = document.getElementById('btn-mt-download');
+
+// XML → MT940 panel
+const dzXml       = document.getElementById('dz-xml');
+const fiXml       = document.getElementById('fi-xml');
+const fiXmlInfo   = document.getElementById('fi-xml-info');
+const fiXmlName   = document.getElementById('fi-xml-name');
+const fiXmlSize   = document.getElementById('fi-xml-size');
+const fiXmlRemove = document.getElementById('fi-xml-remove');
+const btnXmlParse = document.getElementById('btn-xml-parse');
+const btnXmlDl    = document.getElementById('btn-xml-download');
+
+// ---------------------------------------------------------------------------
+// Utilities
 // ---------------------------------------------------------------------------
 function formatBytes(bytes) {
   if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  return `${(bytes / 1024 / 1024).toFixed(2)} MB`;
-}
-
-function formatAmount(amount, indicator) {
-  const num = parseFloat(amount);
-  const abs = Math.abs(num).toLocaleString('es-ES', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-  return abs;
-}
-
-function indicatorLabel(ind) {
-  switch ((ind || '').toUpperCase()) {
-    case 'C':  return { label: 'Crédito', cls: 'credit' };
-    case 'D':  return { label: 'Débito',  cls: 'debit' };
-    case 'RC': return { label: 'Rev.Créd', cls: 'reversal' };
-    case 'RD': return { label: 'Rev.Déb', cls: 'reversal' };
-    case 'CN': return { label: 'Crédito', cls: 'credit' };
-    case 'DN': return { label: 'Débito',  cls: 'debit' };
-    default:   return { label: ind || '-', cls: 'credit' };
-  }
+  if (bytes < 1048576) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / 1048576).toFixed(2)} MB`;
 }
 
 function escapeHtml(str) {
   if (!str) return '';
-  return str
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
+  return String(str)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+function indicatorLabel(ind) {
+  switch ((ind || '').toUpperCase()) {
+    case 'C':  return { label: 'Crédito',    cls: 'credit' };
+    case 'D':  return { label: 'Débito',     cls: 'debit'  };
+    case 'RC': return { label: 'Rev.Créd.',  cls: 'reversal' };
+    case 'RD': return { label: 'Rev.Déb.',   cls: 'reversal' };
+    default:   return { label: ind || '-',   cls: 'credit'  };
+  }
 }
 
 // ---------------------------------------------------------------------------
-// File handling
+// Mode switching
 // ---------------------------------------------------------------------------
-function setFile(file) {
-  selectedFile = file;
-  lastParseResult = null;
+function switchMode(mode) {
+  currentMode = mode;
 
-  fileInfo.classList.remove('hidden');
-  fileName.textContent = file.name;
-  fileSize.textContent = formatBytes(file.size);
-  btnParse.disabled = false;
-  btnDownload.classList.add('hidden');
-  btnDownload.disabled = true;
+  // Tabs
+  tabMtToXml.classList.toggle('mode-tab--active', mode === 'mt-to-xml');
+  tabMtToXml.setAttribute('aria-selected', mode === 'mt-to-xml');
+  tabXmlToMt.classList.toggle('mode-tab--active', mode === 'xml-to-mt');
+  tabXmlToMt.setAttribute('aria-selected', mode === 'xml-to-mt');
+
+  // Panels
+  panelMtToXml.classList.toggle('hidden', mode !== 'mt-to-xml');
+  panelXmlToMt.classList.toggle('hidden', mode !== 'xml-to-mt');
 
   clearMessages();
   hidePreview();
 }
 
-function clearFile() {
-  selectedFile = null;
-  lastParseResult = null;
+tabMtToXml.addEventListener('click', () => switchMode('mt-to-xml'));
+tabXmlToMt.addEventListener('click', () => switchMode('xml-to-mt'));
+
+// ---------------------------------------------------------------------------
+// File handling (generic)
+// ---------------------------------------------------------------------------
+function setFile(mode, file, nameEl, sizeEl, infoEl, parseBtn, dlBtn) {
+  state[mode].file = file;
+  nameEl.textContent = file.name;
+  sizeEl.textContent = formatBytes(file.size);
+  infoEl.classList.remove('hidden');
+  parseBtn.disabled = false;
+  dlBtn.classList.add('hidden');
+  dlBtn.disabled = true;
+  clearMessages();
+  hidePreview();
+}
+
+function clearFile(mode, fileInput, nameEl, sizeEl, infoEl, parseBtn, dlBtn) {
+  state[mode].file = null;
   fileInput.value = '';
-
-  fileInfo.classList.add('hidden');
-  btnParse.disabled = true;
-  btnDownload.classList.add('hidden');
-  btnDownload.disabled = true;
-
+  infoEl.classList.add('hidden');
+  nameEl.textContent = '';
+  sizeEl.textContent = '';
+  parseBtn.disabled = true;
+  dlBtn.classList.add('hidden');
+  dlBtn.disabled = true;
   clearMessages();
   hidePreview();
 }
 
+// MT940 panel bindings
+function setupDropZone(dz, fi, mode, nameEl, sizeEl, infoEl, parseBtn, dlBtn) {
+  dz.addEventListener('click', () => fi.click());
+  dz.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); fi.click(); } });
+  dz.addEventListener('dragover', e => { e.preventDefault(); dz.classList.add('drag-over'); });
+  dz.addEventListener('dragleave', () => dz.classList.remove('drag-over'));
+  dz.addEventListener('drop', e => {
+    e.preventDefault();
+    dz.classList.remove('drag-over');
+    const file = e.dataTransfer.files[0];
+    if (file) setFile(mode, file, nameEl, sizeEl, infoEl, parseBtn, dlBtn);
+  });
+  fi.addEventListener('change', () => {
+    if (fi.files[0]) setFile(mode, fi.files[0], nameEl, sizeEl, infoEl, parseBtn, dlBtn);
+  });
+}
+
+setupDropZone(dzMt,  fiMt,  'mt-to-xml', fiMtName,  fiMtSize,  fiMtInfo,  btnMtParse,  btnMtDl);
+setupDropZone(dzXml, fiXml, 'xml-to-mt', fiXmlName, fiXmlSize, fiXmlInfo, btnXmlParse, btnXmlDl);
+
+fiMtRemove.addEventListener('click',  () => clearFile('mt-to-xml', fiMt,  fiMtName,  fiMtSize,  fiMtInfo,  btnMtParse,  btnMtDl));
+fiXmlRemove.addEventListener('click', () => clearFile('xml-to-mt', fiXml, fiXmlName, fiXmlSize, fiXmlInfo, btnXmlParse, btnXmlDl));
+
+// ---------------------------------------------------------------------------
+// Messages
+// ---------------------------------------------------------------------------
 function clearMessages() {
   messages.innerHTML = '';
   messages.classList.add('hidden');
 }
 
-function hidePreview() {
-  previewSec.classList.add('hidden');
-  stmtsContainer.innerHTML = '';
-}
-
-function showLoading(text) {
-  loadingText.textContent = text || 'Procesando...';
-  loading.classList.remove('hidden');
-}
-
-function hideLoading() {
-  loading.classList.add('hidden');
-}
-
-// ---------------------------------------------------------------------------
-// Message rendering
-// ---------------------------------------------------------------------------
 function showMessage(type, title, items) {
-  const icons = {
-    error:   '✕',
-    warning: '⚠',
-    info:    'ℹ',
-  };
+  const icons = { error: '✕', warning: '⚠', info: 'ℹ' };
   const div = document.createElement('div');
   div.className = `message message--${type}`;
-
-  let html = `<span class="message__icon">${icons[type] || 'ℹ'}</span>`;
-  html += `<div><strong>${escapeHtml(title)}</strong>`;
-  if (items && items.length > 0) {
-    html += `<ul class="message__list">`;
-    items.forEach(item => { html += `<li>${escapeHtml(item)}</li>`; });
-    html += `</ul>`;
+  let html = `<span class="message__icon">${icons[type] || 'ℹ'}</span><div><strong>${escapeHtml(title)}</strong>`;
+  if (items && items.length) {
+    html += `<ul class="message__list">${items.map(i => `<li>${escapeHtml(i)}</li>`).join('')}</ul>`;
   }
-  html += `</div>`;
+  html += '</div>';
   div.innerHTML = html;
-
   messages.appendChild(div);
   messages.classList.remove('hidden');
 }
 
 // ---------------------------------------------------------------------------
-// Preview rendering
+// Loading
 // ---------------------------------------------------------------------------
-function renderPreview(data) {
-  stmtsContainer.innerHTML = '';
+function showLoading(text) { loadingText.textContent = text; loading.classList.remove('hidden'); }
+function hideLoading()     { loading.classList.add('hidden'); }
 
-  const count = data.statements ? data.statements.length : 0;
+// ---------------------------------------------------------------------------
+// Preview
+// ---------------------------------------------------------------------------
+function hidePreview() {
+  previewSec.classList.add('hidden');
+  stmtsCont.innerHTML = '';
+}
+
+function renderPreview(data) {
+  stmtsCont.innerHTML = '';
+  const count = (data.statements || []).length;
   const totalTxns = (data.statements || []).reduce((s, st) => s + (st.transactions || []).length, 0);
   previewMeta.textContent = `${count} statement${count !== 1 ? 's' : ''} · ${totalTxns} transacción${totalTxns !== 1 ? 'es' : ''}`;
 
   if (!count) {
-    stmtsContainer.innerHTML = '<p class="no-transactions">No se encontraron statements en el archivo.</p>';
+    stmtsCont.innerHTML = '<p class="no-transactions">No se encontraron statements en el archivo.</p>';
   } else {
-    data.statements.forEach((stmt, idx) => renderStatement(stmt, idx + 1));
+    (data.statements || []).forEach((stmt, i) => renderStatement(stmt, i + 1));
   }
-
   previewSec.classList.remove('hidden');
 }
 
@@ -164,35 +224,35 @@ function renderStatement(stmt, num) {
   const block = document.createElement('div');
   block.className = 'statement-block';
 
-  // Head
   block.innerHTML = `
     <div class="statement-head">
       <div class="statement-head__title">Statement #${num} — Ref: ${escapeHtml(stmt.transaction_reference)}</div>
       <div class="statement-meta">
         <span><strong>Cuenta:</strong> ${escapeHtml(stmt.iban || stmt.account_id)}</span>
-        ${stmt.bic ? `<span><strong>BIC:</strong> ${escapeHtml(stmt.bic)}</span>` : ''}
+        ${stmt.bic      ? `<span><strong>BIC:</strong> ${escapeHtml(stmt.bic)}</span>` : ''}
         ${stmt.currency ? `<span><strong>Moneda:</strong> ${escapeHtml(stmt.currency)}</span>` : ''}
         ${stmt.statement_number ? `<span><strong>N° Extracto:</strong> ${escapeHtml(stmt.statement_number)}/${escapeHtml(stmt.sequence_number)}</span>` : ''}
-        <span><strong>Transacciones:</strong> ${stmt.transactions ? stmt.transactions.length : 0}</span>
+        <span><strong>Transacciones:</strong> ${(stmt.transactions || []).length}</span>
       </div>
     </div>`;
 
   // Balances
-  const balances = [];
-  if (stmt.opening_balance) balances.push({ label: 'Saldo inicial', bal: stmt.opening_balance });
-  if (stmt.closing_balance) balances.push({ label: 'Saldo final', bal: stmt.closing_balance });
-  if (stmt.available_balance) balances.push({ label: 'Saldo disponible', bal: stmt.available_balance });
+  const balDefs = [
+    { label: 'Saldo inicial',    bal: stmt.opening_balance   },
+    { label: 'Saldo final',      bal: stmt.closing_balance   },
+    { label: 'Saldo disponible', bal: stmt.available_balance },
+  ].filter(b => b.bal);
 
-  if (balances.length) {
+  if (balDefs.length) {
     const row = document.createElement('div');
     row.className = 'balance-row';
-    balances.forEach(({ label, bal }) => {
-      const isCredit = bal.indicator === 'C';
+    balDefs.forEach(({ label, bal }) => {
+      const isCr = bal.indicator === 'C';
       row.innerHTML += `
         <div class="balance-pill">
           <span class="balance-pill__label">${label}:</span>
-          <span class="balance-pill__amount balance-pill__amount--${isCredit ? 'credit' : 'debit'}">
-            ${isCredit ? '+' : '-'}${formatAmount(bal.amount)} ${escapeHtml(bal.currency)}
+          <span class="balance-pill__amount balance-pill__amount--${isCr ? 'credit' : 'debit'}">
+            ${isCr ? '+' : '-'}${parseFloat(bal.amount).toLocaleString('es-ES', { minimumFractionDigits: 2 })} ${escapeHtml(bal.currency)}
           </span>
           <span style="color:var(--color-muted);font-size:11px;margin-left:4px;">${bal.date}</span>
         </div>`;
@@ -201,181 +261,113 @@ function renderStatement(stmt, num) {
   }
 
   // Transactions table
-  const tableWrap = document.createElement('div');
-  tableWrap.className = 'table-wrap';
+  const wrap = document.createElement('div');
+  wrap.className = 'table-wrap';
 
-  if (!stmt.transactions || stmt.transactions.length === 0) {
-    tableWrap.innerHTML = '<p class="no-transactions">Sin transacciones en este statement.</p>';
+  if (!(stmt.transactions || []).length) {
+    wrap.innerHTML = '<p class="no-transactions">Sin transacciones en este statement.</p>';
   } else {
     const table = document.createElement('table');
     table.className = 'transactions-table';
     table.innerHTML = `
-      <thead>
-        <tr>
-          <th>#</th>
-          <th>Fecha valor</th>
-          <th>Fecha contable</th>
-          <th>Tipo</th>
-          <th>Tipo SWIFT</th>
-          <th>Referencia cliente</th>
-          <th>Ref. banco</th>
-          <th style="text-align:right">Importe</th>
-          <th>Narrativa / Detalle</th>
-        </tr>
-      </thead>`;
-
+      <thead><tr>
+        <th>#</th><th>Fecha valor</th><th>Fecha contable</th>
+        <th>Tipo</th><th>Cód. SWIFT</th><th>Ref. cliente</th>
+        <th>Ref. banco</th><th style="text-align:right">Importe</th><th>Narrativa</th>
+      </tr></thead>`;
     const tbody = document.createElement('tbody');
-    stmt.transactions.forEach((txn, i) => {
+    (stmt.transactions || []).forEach((txn, i) => {
       const ind = indicatorLabel(txn.indicator);
-      const amtClass = ind.cls === 'credit' ? 'credit' : (ind.cls === 'debit' ? 'debit' : 'debit');
-      const badgeCls = `badge-ind--${ind.cls}`;
+      const amtCls = ind.cls === 'credit' ? 'credit' : 'debit';
       const tr = document.createElement('tr');
       tr.innerHTML = `
         <td style="color:var(--color-muted);font-size:12px">${i + 1}</td>
         <td>${escapeHtml(txn.value_date || '-')}</td>
         <td>${escapeHtml(txn.booking_date || '-')}</td>
-        <td><span class="badge-ind ${badgeCls}">${escapeHtml(ind.label)}</span></td>
+        <td><span class="badge-ind badge-ind--${ind.cls}">${escapeHtml(ind.label)}</span></td>
         <td class="td-ref">${escapeHtml(txn.transaction_type_id || '-')}</td>
         <td class="td-ref">${escapeHtml(txn.customer_reference || '-')}</td>
         <td class="td-ref">${escapeHtml(txn.bank_reference || '-')}</td>
-        <td class="td-amount td-amount--${amtClass}">${formatAmount(txn.amount)}</td>
+        <td class="td-amount td-amount--${amtCls}">${parseFloat(txn.amount).toLocaleString('es-ES', { minimumFractionDigits: 2 })}</td>
         <td class="td-narrative">${escapeHtml(txn.narrative || '')}</td>`;
       tbody.appendChild(tr);
     });
     table.appendChild(tbody);
-    tableWrap.appendChild(table);
+    wrap.appendChild(table);
   }
-  block.appendChild(tableWrap);
-  stmtsContainer.appendChild(block);
+  block.appendChild(wrap);
+  stmtsCont.appendChild(block);
 }
 
 // ---------------------------------------------------------------------------
-// API calls
+// API calls (generic)
 // ---------------------------------------------------------------------------
-async function parseFile() {
-  if (!selectedFile) return;
+async function doParseOrConvert(action, mode, parseBtn, dlBtn) {
+  const file = state[mode].file;
+  if (!file) return;
+
+  const cfg = MODE[mode];
+  const isParse = action === 'parse';
+  const endpoint = isParse ? cfg.parseEndpoint : cfg.convertEndpoint;
+  const loadMsg  = isParse ? cfg.parseLoadingText : cfg.convertLoadingText;
 
   clearMessages();
-  hidePreview();
-  showLoading('Analizando archivo MT940...');
-  btnParse.disabled = true;
+  if (isParse) hidePreview();
+  showLoading(loadMsg);
+  if (isParse) { parseBtn.disabled = true; } else { dlBtn.disabled = true; }
 
   const fd = new FormData();
-  fd.append('file', selectedFile);
+  fd.append('file', file);
 
   try {
-    const res = await fetch('/api/parse', { method: 'POST', body: fd });
-    const data = await res.json();
-    hideLoading();
+    const res = await fetch(endpoint, { method: 'POST', body: fd });
 
-    if (!res.ok) {
-      showMessage('error', data.error || 'Error al procesar el archivo.', data.details);
-      return;
-    }
-
-    lastParseResult = data;
-
-    // Show errors and warnings
-    if (data.errors && data.errors.length) {
-      showMessage('error', `Se encontraron ${data.errors.length} error(es) al parsear:`, data.errors);
-    }
-    if (data.warnings && data.warnings.length) {
-      showMessage('warning', `Advertencias (${data.warnings.length}):`, data.warnings);
-    }
-    if (data.statements && data.statements.length > 0) {
-      if (!data.errors || !data.errors.length) {
-        showMessage('info', `Archivo analizado correctamente: ${data.statements.length} statement(s) encontrado(s).`);
+    if (isParse) {
+      const data = await res.json();
+      hideLoading();
+      if (!res.ok) { showMessage('error', data.error || 'Error al procesar.', data.details); return; }
+      if (data.errors && data.errors.length)   showMessage('error',   `${data.errors.length} error(es):`, data.errors);
+      if (data.warnings && data.warnings.length) showMessage('warning', `Advertencias (${data.warnings.length}):`, data.warnings);
+      if (data.statements && data.statements.length) {
+        if (!data.errors || !data.errors.length)
+          showMessage('info', `Archivo analizado: ${data.statements.length} statement(s) encontrado(s).`);
+        renderPreview(data);
+        dlBtn.classList.remove('hidden');
+        dlBtn.disabled = false;
+      } else {
+        showMessage('error', 'No se encontraron statements válidos.');
       }
-      renderPreview(data);
-      btnDownload.classList.remove('hidden');
-      btnDownload.disabled = false;
     } else {
-      showMessage('error', 'No se encontraron statements válidos en el archivo.');
+      // Download
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: 'Error del servidor.' }));
+        hideLoading();
+        showMessage('error', err.error || 'Error al convertir.', err.details);
+        return;
+      }
+      const blob = await res.blob();
+      const disp = res.headers.get('Content-Disposition') || '';
+      const nm = (disp.match(/filename="?([^"]+)"?/) || [])[1] || 'output.txt';
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url; a.download = nm;
+      document.body.appendChild(a); a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      hideLoading();
     }
   } catch (err) {
     hideLoading();
     showMessage('error', 'Error de red o del servidor.', [err.message]);
   } finally {
-    btnParse.disabled = false;
-  }
-}
-
-async function downloadXml() {
-  if (!selectedFile) return;
-
-  showLoading('Generando camt.053 XML...');
-  btnDownload.disabled = true;
-
-  const fd = new FormData();
-  fd.append('file', selectedFile);
-
-  try {
-    const res = await fetch('/api/convert', { method: 'POST', body: fd });
-
-    if (!res.ok) {
-      const errData = await res.json().catch(() => ({ error: 'Error desconocido del servidor.' }));
-      hideLoading();
-      showMessage('error', errData.error || 'Error al convertir.', errData.details);
-      return;
-    }
-
-    // Trigger download from the blob response
-    const blob = await res.blob();
-    const disposition = res.headers.get('Content-Disposition') || '';
-    const nameMatch = disposition.match(/filename="?([^"]+)"?/);
-    const downloadName = nameMatch ? nameMatch[1] : 'output_camt053.xml';
-
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = downloadName;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-
-    hideLoading();
-  } catch (err) {
-    hideLoading();
-    showMessage('error', 'Error al descargar el archivo.', [err.message]);
-  } finally {
-    btnDownload.disabled = false;
+    if (isParse) { parseBtn.disabled = false; } else { dlBtn.disabled = false; }
   }
 }
 
 // ---------------------------------------------------------------------------
-// Event listeners — Drop zone
+// Button bindings
 // ---------------------------------------------------------------------------
-dropZone.addEventListener('click', () => fileInput.click());
-
-dropZone.addEventListener('dragover', e => {
-  e.preventDefault();
-  dropZone.classList.add('drag-over');
-});
-dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag-over'));
-dropZone.addEventListener('drop', e => {
-  e.preventDefault();
-  dropZone.classList.remove('drag-over');
-  const file = e.dataTransfer.files[0];
-  if (file) setFile(file);
-});
-
-fileInput.addEventListener('change', () => {
-  if (fileInput.files[0]) setFile(fileInput.files[0]);
-});
-
-fileRemove.addEventListener('click', clearFile);
-
-// ---------------------------------------------------------------------------
-// Event listeners — Buttons
-// ---------------------------------------------------------------------------
-btnParse.addEventListener('click', parseFile);
-btnDownload.addEventListener('click', downloadXml);
-
-// ---------------------------------------------------------------------------
-// Keyboard: allow drop zone activation with Enter/Space
-// ---------------------------------------------------------------------------
-dropZone.setAttribute('tabindex', '0');
-dropZone.addEventListener('keydown', e => {
-  if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); fileInput.click(); }
-});
+btnMtParse.addEventListener('click',  () => doParseOrConvert('parse',   'mt-to-xml', btnMtParse,  btnMtDl));
+btnMtDl.addEventListener('click',     () => doParseOrConvert('convert', 'mt-to-xml', btnMtParse,  btnMtDl));
+btnXmlParse.addEventListener('click', () => doParseOrConvert('parse',   'xml-to-mt', btnXmlParse, btnXmlDl));
+btnXmlDl.addEventListener('click',    () => doParseOrConvert('convert', 'xml-to-mt', btnXmlParse, btnXmlDl));

@@ -1,5 +1,5 @@
 /* =========================================================
-   MT940 → camt.053 Converter — Styles
+   MT940 ↔ camt.053 Converter — Styles
    ========================================================= */
 
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -396,6 +396,60 @@ body {
   border-top: 1px solid var(--color-border);
   background: var(--color-surface);
   margin-top: auto;
+}
+
+/* ---- Mode tabs ---- */
+.mode-card { padding-bottom: 20px; }
+.mode-tabs {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.mode-tab {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 20px;
+  border: 2px solid var(--color-border);
+  border-radius: var(--radius);
+  background: var(--color-bg);
+  cursor: pointer;
+  transition: border-color .2s, background .2s, box-shadow .2s;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--color-muted);
+  flex: 1;
+  min-width: 220px;
+}
+.mode-tab:hover {
+  border-color: var(--color-primary);
+  background: var(--color-info-bg);
+  color: var(--color-primary);
+}
+.mode-tab--active {
+  border-color: var(--color-primary);
+  background: var(--color-info-bg);
+  color: var(--color-primary);
+  box-shadow: 0 0 0 3px rgba(26,79,186,.12);
+}
+.mode-tab__badge {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: .06em;
+  padding: 2px 8px;
+  border-radius: 3px;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+.mode-tab__badge--mt  { background: #e8f0fc; color: var(--color-primary); border: 1px solid #c3d4f5; }
+.mode-tab__badge--iso { background: #d4f0e0; color: var(--color-success); border: 1px solid #a8dfc0; }
+.mode-tab__arrow { color: var(--color-muted); flex-shrink: 0; }
+.mode-tab--active .mode-tab__arrow { color: var(--color-primary); }
+.mode-tab__label {
+  font-weight: 700;
+  font-size: 13px;
+  margin-left: 4px;
+  white-space: nowrap;
 }
 
 /* ---- Utility ---- */

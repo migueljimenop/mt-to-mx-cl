@@ -3,58 +3,117 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>MT940 → camt.053 Converter</title>
+  <title>MT940 ↔ camt.053 Converter</title>
   <link rel="stylesheet" href="/static/css/style.css" />
 </head>
 <body>
   <header class="header">
     <div class="header-inner">
       <div class="logo">
-        <span class="logo-badge">SWIFT</span>
-        <span class="logo-arrow">→</span>
+        <span class="logo-badge">SWIFT MT940</span>
+        <span class="logo-arrow">↔</span>
         <span class="logo-badge logo-badge--iso">ISO 20022</span>
       </div>
-      <h1 class="header-title">MT940 → camt.053 Converter</h1>
-      <p class="header-subtitle">Convierte estados de cuenta MT940 al estándar XML ISO 20022 camt.053.001.08</p>
+      <h1 class="header-title">MT940 ↔ camt.053 Converter</h1>
+      <p class="header-subtitle">Convierte entre el formato SWIFT MT940 y el estándar XML ISO 20022 camt.053.001.08</p>
     </div>
   </header>
 
   <main class="main">
 
-    <!-- Upload area -->
-    <section class="card upload-card" id="upload-section">
+    <!-- Mode selector -->
+    <section class="card mode-card">
+      <h2 class="card-title">Dirección de conversión</h2>
+      <div class="mode-tabs" role="tablist">
+        <button class="mode-tab mode-tab--active" id="tab-mt-to-xml" role="tab"
+                aria-selected="true" aria-controls="panel-mt-to-xml">
+          <span class="mode-tab__badge mode-tab__badge--mt">MT940</span>
+          <svg class="mode-tab__arrow" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+          <span class="mode-tab__badge mode-tab__badge--iso">camt.053 XML</span>
+          <span class="mode-tab__label">MT940 → XML</span>
+        </button>
+        <button class="mode-tab" id="tab-xml-to-mt" role="tab"
+                aria-selected="false" aria-controls="panel-xml-to-mt">
+          <span class="mode-tab__badge mode-tab__badge--iso">camt.053 XML</span>
+          <svg class="mode-tab__arrow" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+          <span class="mode-tab__badge mode-tab__badge--mt">MT940</span>
+          <span class="mode-tab__label">XML → MT940</span>
+        </button>
+      </div>
+    </section>
+
+    <!-- ===================== Panel MT940 → XML ===================== -->
+    <section class="card upload-card" id="panel-mt-to-xml" role="tabpanel">
       <h2 class="card-title">1. Cargar archivo MT940</h2>
 
-      <div class="drop-zone" id="drop-zone" role="region" aria-label="Zona de carga de archivo">
-        <input type="file" id="file-input" accept=".txt,.sta,.mt940,.mt9,.swift" hidden />
+      <div class="drop-zone" id="dz-mt" tabindex="0" role="region" aria-label="Zona de carga MT940">
+        <input type="file" id="fi-mt" accept=".txt,.sta,.mt940,.mt9,.swift" hidden />
         <div class="drop-zone__icon" aria-hidden="true">
           <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
             <path d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1M16 12l-4-4-4 4M12 8v8" stroke-linecap="round" stroke-linejoin="round"/>
           </svg>
         </div>
         <p class="drop-zone__text">Arrastra aquí tu archivo MT940<br><span class="drop-zone__subtext">o haz clic para seleccionar</span></p>
-        <p class="drop-zone__hint">Formatos aceptados: .txt · .sta · .mt940 · .mt9 · .swift</p>
+        <p class="drop-zone__hint">Formatos: .txt · .sta · .mt940 · .mt9 · .swift</p>
       </div>
 
-      <div class="file-info hidden" id="file-info">
+      <div class="file-info hidden" id="fi-mt-info">
         <div class="file-info__icon" aria-hidden="true">
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/>
           </svg>
         </div>
-        <span class="file-info__name" id="file-name"></span>
-        <span class="file-info__size" id="file-size"></span>
-        <button class="file-info__remove" id="file-remove" title="Eliminar archivo" aria-label="Eliminar archivo">✕</button>
+        <span class="file-info__name" id="fi-mt-name"></span>
+        <span class="file-info__size" id="fi-mt-size"></span>
+        <button class="file-info__remove" id="fi-mt-remove" title="Quitar archivo" aria-label="Quitar archivo">✕</button>
       </div>
 
       <div class="action-row">
-        <button class="btn btn--primary" id="btn-parse" disabled>
+        <button class="btn btn--primary" id="btn-mt-parse" disabled>
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>
           Analizar archivo
         </button>
-        <button class="btn btn--success hidden" id="btn-download" disabled>
+        <button class="btn btn--success hidden" id="btn-mt-download" disabled>
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
           Descargar camt.053 XML
+        </button>
+      </div>
+    </section>
+
+    <!-- ===================== Panel XML → MT940 ===================== -->
+    <section class="card upload-card hidden" id="panel-xml-to-mt" role="tabpanel">
+      <h2 class="card-title">1. Cargar archivo camt.053 XML</h2>
+
+      <div class="drop-zone" id="dz-xml" tabindex="0" role="region" aria-label="Zona de carga XML">
+        <input type="file" id="fi-xml" accept=".xml" hidden />
+        <div class="drop-zone__icon" aria-hidden="true">
+          <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+            <path d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1M16 12l-4-4-4 4M12 8v8" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+        </div>
+        <p class="drop-zone__text">Arrastra aquí tu archivo camt.053 XML<br><span class="drop-zone__subtext">o haz clic para seleccionar</span></p>
+        <p class="drop-zone__hint">Formato: .xml (camt.053.001.02 – .001.11)</p>
+      </div>
+
+      <div class="file-info hidden" id="fi-xml-info">
+        <div class="file-info__icon" aria-hidden="true">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/>
+          </svg>
+        </div>
+        <span class="file-info__name" id="fi-xml-name"></span>
+        <span class="file-info__size" id="fi-xml-size"></span>
+        <button class="file-info__remove" id="fi-xml-remove" title="Quitar archivo" aria-label="Quitar archivo">✕</button>
+      </div>
+
+      <div class="action-row">
+        <button class="btn btn--primary" id="btn-xml-parse" disabled>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>
+          Analizar archivo
+        </button>
+        <button class="btn btn--success hidden" id="btn-xml-download" disabled>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+          Descargar MT940 .txt
         </button>
       </div>
     </section>
@@ -62,19 +121,18 @@
     <!-- Messages -->
     <div class="messages hidden" id="messages"></div>
 
-    <!-- Loading indicator -->
+    <!-- Loading -->
     <div class="loading hidden" id="loading" aria-live="polite">
       <div class="spinner" aria-hidden="true"></div>
       <span id="loading-text">Procesando...</span>
     </div>
 
-    <!-- Preview section -->
+    <!-- Preview section (shared) -->
     <section class="card preview-card hidden" id="preview-section">
       <div class="preview-header">
         <h2 class="card-title">2. Vista previa del contenido parseado</h2>
         <div class="preview-meta" id="preview-meta"></div>
       </div>
-
       <div id="statements-container"></div>
     </section>
 
