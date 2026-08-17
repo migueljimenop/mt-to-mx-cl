@@ -430,6 +430,9 @@ async function loadSample(name) {
 // Estados de los pasos
 // ---------------------------------------------------------------------------
 function hideReview() {
+  // El estado parseado muere con el panel: si no, al cambiar de flujo con el
+  // archivo puesto sobreviviría el resultado del flujo anterior.
+  state.parsed = null;
   stepReview.hidden = true;
   stmtsEl.innerHTML = '';
   noticesEl.innerHTML = '';
