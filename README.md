@@ -1,6 +1,28 @@
-# MT940 ↔ camt.053 Converter
+# Conversor MT → MX
 
-Aplicación web que convierte entre el formato de estados de cuenta bancarios **SWIFT MT940** y el estándar XML **ISO 20022 camt.053.001.08**, en ambas direcciones.
+Aplicación web para llevar cartolas bancarias a formatos estándar: convierte entre
+**cartolas en Excel**, **SWIFT MT940** e **ISO 20022 camt.053.001.08**.
+
+Pensada para quien tiene una cartola de su banco y necesita entregarla en un formato
+estándar: se carga el archivo, se revisa lo que el sistema entendió y recién entonces
+se descarga el resultado.
+
+## La interfaz
+
+- **Barra lateral** con los tres flujos de conversión y la referencia de formatos.
+- **Tres pasos** — Origen → Revisión → Resultado — que se van revelando a medida que avanzas.
+- **Vista previa del archivo generado** antes de descargarlo, con opción de copiarlo.
+- **Cartolas de ejemplo** cargables en un clic, para probar sin tener un archivo a mano.
+- **Resumen del parseo**: movimientos, abonos, cargos, período y saldo de cierre.
+- **«Cómo se leyó tu archivo»**: qué columna se interpretó como qué, y qué valores tuvo
+  que deducir el parser (la cartola no trae saldo de apertura, código de operación, etc.).
+- **Verificación de cuadre**: comprueba que saldo inicial + movimientos = saldo final.
+- **Aviso de límites del formato**: advierte si un detalle excede lo que admite el campo
+  `:86:` de MT940 antes de que se recorte.
+- Tema claro / oscuro / sistema, tabla de movimientos filtrable y diseño responsive.
+
+> Herramienta independiente. Sin afiliación con Banco Santander ni con ninguna otra
+> institución financiera.
 
 ## Características
 
@@ -25,7 +47,11 @@ Aplicación web que convierte entre el formato de estados de cuenta bancarios **
   * columnas separadas cargo/abono (Banco Santander: "Monto cargo"/"Monto abono")
   * columnas "Cargos"/"Abonos" con metadatos de cuenta (Banco de Chile)
 - Detecta número de cuenta y moneda (CLP) desde los metadatos
-- Los saldos inicial/final se derivan de la suma neta de transacciones
+- Los saldos inicial/final se derivan de la suma neta de transacciones y se fechan
+  con el primer y el último movimiento, de modo que el período del camt.053
+  (`FrToDt`) corresponde al que cubre la cartola
+- El resultado del parseo incluye `meta.field_map` (qué columna se leyó como qué)
+  y `meta.assumptions` (qué valores se dedujeron), que la interfaz muestra al usuario
 
 ## Instalación
 
@@ -68,12 +94,14 @@ Todos los endpoints reciben `multipart/form-data` con campo `file`.
 **XML:** `.xml` (camt.053.001.02 – camt.053.001.11)  
 **Excel:** `.xlsx` `.xls` (cartola bancaria)
 
+Tamaño máximo de subida: 5 MB, configurable con la variable de entorno `MAX_UPLOAD_MB`.
+
 ## Tests
 
 ```bash
 pip3 install pytest
 python3 -m pytest tests/ -v
-# 108 tests
+# 115 tests
 ```
 
 ## Estructura del proyecto
@@ -91,7 +119,9 @@ mt-to-mx-cl/
 │   │   └── mt940_generator.py  # Generador MT940
 │   ├── routes.py               # API Flask
 │   ├── templates/index.html    # Interfaz web
-│   └── static/                 # CSS y JS
+│   └── static/
+│       ├── css/ · js/          # Estilos y lógica de la interfaz
+│       └── samples/            # Cartolas y archivos de ejemplo (datos sintéticos)
 ├── tests/
 │   ├── fixtures/               # Archivos MT940, XML y Excel de prueba
 │   ├── test_parser.py

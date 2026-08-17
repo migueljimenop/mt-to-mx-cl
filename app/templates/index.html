@@ -1,200 +1,319 @@
 <!DOCTYPE html>
-<html lang="es">
+<html lang="es-CL">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>MT940 ↔ camt.053 Converter</title>
-  <link rel="stylesheet" href="/static/css/style.css" />
+  <meta name="description" content="Convierte cartolas bancarias y archivos SWIFT MT940 al estándar ISO 20022 camt.053, y de vuelta." />
+  <title>Conversor MT → MX · ISO 20022</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23EC0000'/%3E%3Cpath d='M7 12.5h15l-4-4M25 19.5H10l4 4' fill='none' stroke='white' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E" />
+  <script>
+    // Applied before first paint so the theme never flashes.
+    (function () {
+      try {
+        var t = localStorage.getItem('mtmx-theme');
+        if (t === 'dark' || t === 'light') document.documentElement.setAttribute('data-theme', t);
+      } catch (e) {}
+    })();
+  </script>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v=2" />
 </head>
 <body>
-  <header class="header">
-    <div class="header-inner">
-      <div class="logo">
-        <span class="logo-badge">SWIFT MT940</span>
-        <span class="logo-arrow">↔</span>
-        <span class="logo-badge logo-badge--iso">ISO 20022</span>
-      </div>
-      <h1 class="header-title">MT940 ↔ camt.053 Converter</h1>
-      <p class="header-subtitle">Convierte entre el formato SWIFT MT940 y el estándar XML ISO 20022 camt.053.001.08</p>
-    </div>
-  </header>
 
+<div class="app">
+
+  <!-- ==================== SIDEBAR ==================== -->
+  <aside class="sidebar" id="sidebar">
+    <div class="sidebar__brand">
+      <span class="brand__mark" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M4 8h13l-3.2-3.2M20 16H7l3.2 3.2"/>
+        </svg>
+      </span>
+      <span class="brand__text">
+        <span class="brand__name">MT&nbsp;→&nbsp;MX</span>
+        <span class="brand__sub">Conversor ISO 20022</span>
+      </span>
+      <button class="sidebar__close" id="sidebar-close" aria-label="Cerrar menú">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
+      </button>
+    </div>
+
+    <nav class="nav" aria-label="Flujos de conversión">
+      <p class="nav__section">Convertir</p>
+
+      <button class="nav__item is-active" data-flow="excel" aria-current="page">
+        <span class="nav__icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 10h18M9 10v10"/>
+          </svg>
+        </span>
+        <span class="nav__body">
+          <span class="nav__label">Cartola Excel</span>
+          <span class="nav__hint">a MT940 o camt.053</span>
+        </span>
+      </button>
+
+      <button class="nav__item" data-flow="mt-to-xml">
+        <span class="nav__icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M14 3H7a2 2 0 00-2 2v14a2 2 0 002 2h10a2 2 0 002-2V8z"/><path d="M14 3v5h5M9 13h6M9 17h4"/>
+          </svg>
+        </span>
+        <span class="nav__body">
+          <span class="nav__label">MT940</span>
+          <span class="nav__hint">a camt.053 XML</span>
+        </span>
+      </button>
+
+      <button class="nav__item" data-flow="xml-to-mt">
+        <span class="nav__icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M14 3H7a2 2 0 00-2 2v14a2 2 0 002 2h10a2 2 0 002-2V8z"/><path d="M14 3v5h5"/><path d="M10 12l-2 2 2 2M14 12l2 2-2 2"/>
+          </svg>
+        </span>
+        <span class="nav__body">
+          <span class="nav__label">camt.053 XML</span>
+          <span class="nav__hint">a MT940</span>
+        </span>
+      </button>
+
+      <p class="nav__section">Referencia</p>
+
+      <button class="nav__item nav__item--plain" id="btn-formats">
+        <span class="nav__icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="9"/><path d="M12 16v-4M12 8h.01"/>
+          </svg>
+        </span>
+        <span class="nav__body"><span class="nav__label">Formatos soportados</span></span>
+      </button>
+    </nav>
+
+    <div class="sidebar__foot">
+      <div class="theme">
+        <span class="theme__label">Tema</span>
+        <div class="theme__seg" id="theme-seg" role="radiogroup" aria-label="Tema de la interfaz">
+          <button type="button" class="theme__opt" data-theme-choice="system" role="radio" aria-checked="true">Sistema</button>
+          <button type="button" class="theme__opt" data-theme-choice="light"  role="radio" aria-checked="false">Claro</button>
+          <button type="button" class="theme__opt" data-theme-choice="dark"   role="radio" aria-checked="false">Oscuro</button>
+        </div>
+      </div>
+      <div class="privacy">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <rect x="4" y="10" width="16" height="10" rx="2"/><path d="M8 10V7a4 4 0 018 0v3"/>
+        </svg>
+        <span>Los archivos se procesan en memoria. Nada se almacena ni se envía a terceros.</span>
+      </div>
+      <p class="disclaimer">Herramienta independiente. Sin afiliación con Banco Santander ni con ninguna otra institución financiera.</p>
+    </div>
+  </aside>
+
+  <div class="scrim" id="scrim" hidden></div>
+
+  <!-- ==================== MAIN ==================== -->
   <main class="main">
 
-    <!-- Mode selector -->
-    <section class="card mode-card">
-      <h2 class="card-title">Dirección de conversión</h2>
-      <div class="mode-tabs" role="tablist">
-        <button class="mode-tab mode-tab--active" id="tab-mt-to-xml" role="tab"
-                aria-selected="true" aria-controls="panel-mt-to-xml">
-          <span class="mode-tab__badge mode-tab__badge--mt">MT940</span>
-          <svg class="mode-tab__arrow" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
-          <span class="mode-tab__badge mode-tab__badge--iso">camt.053 XML</span>
-          <span class="mode-tab__label">MT940 → XML</span>
+    <header class="topbar">
+      <div class="topbar__inner">
+        <button class="topbar__menu" id="menu-btn" aria-label="Abrir menú" aria-expanded="false">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 7h16M4 12h16M4 17h16"/></svg>
         </button>
-        <button class="mode-tab" id="tab-xml-to-mt" role="tab"
-                aria-selected="false" aria-controls="panel-xml-to-mt">
-          <span class="mode-tab__badge mode-tab__badge--iso">camt.053 XML</span>
-          <svg class="mode-tab__arrow" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
-          <span class="mode-tab__badge mode-tab__badge--mt">MT940</span>
-          <span class="mode-tab__label">XML → MT940</span>
-        </button>
-        <button class="mode-tab" id="tab-excel" role="tab"
-                aria-selected="false" aria-controls="panel-excel">
-          <span class="mode-tab__badge mode-tab__badge--excel">Excel</span>
-          <svg class="mode-tab__arrow" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
-          <span class="mode-tab__badge mode-tab__badge--mt">MT940</span>
-          <span class="mode-tab__label">Excel → MT940 / XML</span>
-        </button>
-      </div>
-    </section>
-
-    <!-- ===================== Panel MT940 → XML ===================== -->
-    <section class="card upload-card" id="panel-mt-to-xml" role="tabpanel">
-      <h2 class="card-title">1. Cargar archivo MT940</h2>
-
-      <div class="drop-zone" id="dz-mt" tabindex="0" role="region" aria-label="Zona de carga MT940">
-        <input type="file" id="fi-mt" accept=".txt,.sta,.mt940,.mt9,.swift" hidden />
-        <div class="drop-zone__icon" aria-hidden="true">
-          <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-            <path d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1M16 12l-4-4-4 4M12 8v8" stroke-linecap="round" stroke-linejoin="round"/>
-          </svg>
+        <div class="topbar__text">
+          <h1 class="topbar__title" id="flow-title">Cartola Excel</h1>
+          <p class="topbar__desc" id="flow-desc">Convierte una cartola bancaria en Excel a un formato estándar.</p>
         </div>
-        <p class="drop-zone__text">Arrastra aquí tu archivo MT940<br><span class="drop-zone__subtext">o haz clic para seleccionar</span></p>
-        <p class="drop-zone__hint">Formatos: .txt · .sta · .mt940 · .mt9 · .swift</p>
+        <div class="pipe" id="flow-pipe" aria-hidden="true"></div>
       </div>
+    </header>
 
-      <div class="file-info hidden" id="fi-mt-info">
-        <div class="file-info__icon" aria-hidden="true">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/>
-          </svg>
+    <div class="workspace">
+
+      <!-- ---------- STEP 1 · ORIGEN ---------- -->
+      <section class="step" id="step-source" aria-labelledby="h-source">
+        <div class="step__head">
+          <span class="step__num">1</span>
+          <h2 class="step__title" id="h-source">Origen</h2>
+          <span class="step__note" id="source-note">Formatos: .xlsx · .xls</span>
         </div>
-        <span class="file-info__name" id="fi-mt-name"></span>
-        <span class="file-info__size" id="fi-mt-size"></span>
-        <button class="file-info__remove" id="fi-mt-remove" title="Quitar archivo" aria-label="Quitar archivo">✕</button>
-      </div>
 
-      <div class="action-row">
-        <button class="btn btn--primary" id="btn-mt-parse" disabled>
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>
-          Analizar archivo
-        </button>
-        <button class="btn btn--success hidden" id="btn-mt-download" disabled>
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-          Descargar camt.053 XML
-        </button>
-      </div>
-    </section>
-
-    <!-- ===================== Panel XML → MT940 ===================== -->
-    <section class="card upload-card hidden" id="panel-xml-to-mt" role="tabpanel">
-      <h2 class="card-title">1. Cargar archivo camt.053 XML</h2>
-
-      <div class="drop-zone" id="dz-xml" tabindex="0" role="region" aria-label="Zona de carga XML">
-        <input type="file" id="fi-xml" accept=".xml" hidden />
-        <div class="drop-zone__icon" aria-hidden="true">
-          <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-            <path d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1M16 12l-4-4-4 4M12 8v8" stroke-linecap="round" stroke-linejoin="round"/>
-          </svg>
+        <div class="dropzone" id="dropzone" tabindex="0" role="button"
+             aria-label="Seleccionar o arrastrar archivo">
+          <input type="file" id="file-input" hidden />
+          <span class="dropzone__icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M12 16V4M8 8l4-4 4 4"/><path d="M4 15v3a2 2 0 002 2h12a2 2 0 002-2v-3"/>
+            </svg>
+          </span>
+          <p class="dropzone__title">Arrastra tu archivo aquí</p>
+          <p class="dropzone__sub">o <span class="dropzone__link">selecciónalo desde tu equipo</span></p>
         </div>
-        <p class="drop-zone__text">Arrastra aquí tu archivo camt.053 XML<br><span class="drop-zone__subtext">o haz clic para seleccionar</span></p>
-        <p class="drop-zone__hint">Formato: .xml (camt.053.001.02 – .001.11)</p>
-      </div>
 
-      <div class="file-info hidden" id="fi-xml-info">
-        <div class="file-info__icon" aria-hidden="true">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/>
-          </svg>
+        <div class="filecard" id="filecard" hidden>
+          <span class="filecard__icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M14 3H7a2 2 0 00-2 2v14a2 2 0 002 2h10a2 2 0 002-2V8z"/><path d="M14 3v5h5"/>
+            </svg>
+          </span>
+          <span class="filecard__meta">
+            <span class="filecard__name" id="file-name"></span>
+            <span class="filecard__size" id="file-size"></span>
+          </span>
+          <button class="filecard__remove" id="file-remove" aria-label="Quitar archivo">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
+          </button>
         </div>
-        <span class="file-info__name" id="fi-xml-name"></span>
-        <span class="file-info__size" id="fi-xml-size"></span>
-        <button class="file-info__remove" id="fi-xml-remove" title="Quitar archivo" aria-label="Quitar archivo">✕</button>
-      </div>
 
-      <div class="action-row">
-        <button class="btn btn--primary" id="btn-xml-parse" disabled>
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>
-          Analizar archivo
-        </button>
-        <button class="btn btn--success hidden" id="btn-xml-download" disabled>
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-          Descargar MT940 .txt
-        </button>
-      </div>
-    </section>
-
-    <!-- ===================== Panel Excel → MT940 / XML ===================== -->
-    <section class="card upload-card hidden" id="panel-excel" role="tabpanel">
-      <h2 class="card-title">1. Cargar cartola en Excel (xlsx / xls)</h2>
-
-      <div class="drop-zone" id="dz-excel" tabindex="0" role="region" aria-label="Zona de carga Excel">
-        <input type="file" id="fi-excel" accept=".xlsx,.xls" hidden />
-        <div class="drop-zone__icon" aria-hidden="true">
-          <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-            <path d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1M16 12l-4-4-4 4M12 8v8" stroke-linecap="round" stroke-linejoin="round"/>
-          </svg>
+        <div class="samples">
+          <span class="samples__label">¿Sin archivo a mano? Prueba con un ejemplo:</span>
+          <div class="samples__chips" id="samples-chips"></div>
         </div>
-        <p class="drop-zone__text">Arrastra aquí tu cartola Excel<br><span class="drop-zone__subtext">o haz clic para seleccionar</span></p>
-        <p class="drop-zone__hint">Formatos: .xlsx · .xls (detección automática de columnas por cabecera)</p>
-      </div>
 
-      <div class="file-info hidden" id="fi-excel-info">
-        <div class="file-info__icon" aria-hidden="true">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/>
-          </svg>
+        <div class="field" id="target-field" hidden>
+          <label class="field__label" for="target-select">Formato de salida</label>
+          <div class="segmented" id="target-select" role="radiogroup" aria-label="Formato de salida">
+            <button type="button" class="segmented__opt is-active" data-target="xml" role="radio" aria-checked="true">camt.053 XML</button>
+            <button type="button" class="segmented__opt" data-target="mt940" role="radio" aria-checked="false">MT940</button>
+          </div>
         </div>
-        <span class="file-info__name" id="fi-excel-name"></span>
-        <span class="file-info__size" id="fi-excel-size"></span>
-        <button class="file-info__remove" id="fi-excel-remove" title="Quitar archivo" aria-label="Quitar archivo">✕</button>
-      </div>
 
-      <div class="target-row">
-        <label class="target-label" for="xl-target">Formato de salida:</label>
-        <select class="target-select" id="xl-target">
-          <option value="xml" selected>camt.053 XML (.xml)</option>
-          <option value="mt940">MT940 (.txt)</option>
-        </select>
-      </div>
+        <div class="step__actions">
+          <button class="btn btn--primary" id="btn-analyze" disabled>
+            <span class="spinner" aria-hidden="true"></span>
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.6-3.6"/></svg>
+            <span id="btn-analyze-label">Analizar archivo</span>
+          </button>
+        </div>
+      </section>
 
-      <div class="action-row">
-        <button class="btn btn--primary" id="btn-excel-parse" disabled>
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>
-          Analizar cartola
-        </button>
-        <button class="btn btn--success hidden" id="btn-excel-download" disabled>
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-          Descargar archivo
-        </button>
-      </div>
-    </section>
+      <!-- ---------- STEP 2 · REVISIÓN ---------- -->
+      <section class="step" id="step-review" hidden aria-labelledby="h-review">
+        <div class="step__head">
+          <span class="step__num">2</span>
+          <h2 class="step__title" id="h-review">Revisión</h2>
+          <span class="step__note" id="review-meta"></span>
+        </div>
 
-    <!-- Messages -->
-    <div class="messages hidden" id="messages"></div>
+        <div class="kpis" id="kpis"></div>
+        <div class="notices" id="notices"></div>
+        <div id="interpretation"></div>
+        <div id="statements"></div>
 
-    <!-- Loading -->
-    <div class="loading hidden" id="loading" aria-live="polite">
-      <div class="spinner" aria-hidden="true"></div>
-      <span id="loading-text">Procesando...</span>
-    </div>
+        <div class="step__actions">
+          <button class="btn btn--primary" id="btn-convert">
+            <span class="spinner" aria-hidden="true"></span>
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 8h13l-3.2-3.2M20 16H7l3.2 3.2"/></svg>
+            <span id="btn-convert-label">Generar archivo</span>
+          </button>
+        </div>
+      </section>
 
-    <!-- Preview section (shared) -->
-    <section class="card preview-card hidden" id="preview-section">
-      <div class="preview-header">
-        <h2 class="card-title">2. Vista previa del contenido parseado</h2>
-        <div class="preview-meta" id="preview-meta"></div>
-      </div>
-      <div id="statements-container"></div>
-    </section>
+      <!-- ---------- STEP 3 · RESULTADO ---------- -->
+      <section class="step" id="step-output" hidden aria-labelledby="h-output">
+        <div class="step__head">
+          <span class="step__num">3</span>
+          <h2 class="step__title" id="h-output">Resultado</h2>
+          <span class="step__note" id="output-meta"></span>
+        </div>
 
+        <div class="output">
+          <div class="output__bar">
+            <span class="output__file">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 3H7a2 2 0 00-2 2v14a2 2 0 002 2h10a2 2 0 002-2V8z"/><path d="M14 3v5h5"/></svg>
+              <span id="output-name"></span>
+            </span>
+            <span class="output__actions">
+              <button class="btn btn--ghost btn--sm" id="btn-copy">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 012-2h8"/></svg>
+                Copiar
+              </button>
+              <button class="btn btn--primary btn--sm" id="btn-download">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12M8 11l4 4 4-4"/><path d="M4 17v2a2 2 0 002 2h12a2 2 0 002-2v-2"/></svg>
+                Descargar
+              </button>
+            </span>
+          </div>
+          <pre class="output__code" id="output-code" tabindex="0"></pre>
+        </div>
+      </section>
+
+    </div><!-- /workspace -->
   </main>
+</div><!-- /app -->
 
-  <footer class="footer">
-    <p>ISO 20022 camt.053.001.08 &mdash; SWIFT MT940 &mdash; Conversión en memoria, sin envío de datos a terceros.</p>
-  </footer>
+<!-- Global drag overlay -->
+<div class="dropveil" id="dropveil" hidden aria-hidden="true">
+  <div class="dropveil__box">
+    <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 16V4M8 8l4-4 4 4"/><path d="M4 15v3a2 2 0 002 2h12a2 2 0 002-2v-3"/></svg>
+    <p>Suelta el archivo para cargarlo</p>
+  </div>
+</div>
 
-  <script src="/static/js/app.js"></script>
+<!-- Toasts -->
+<div class="toasts" id="toasts" role="status" aria-live="polite"></div>
+
+<!-- Formats dialog -->
+<dialog class="modal" id="formats-modal">
+  <div class="modal__head">
+    <h2 class="modal__title">Formatos soportados</h2>
+    <button class="modal__close" id="formats-close" aria-label="Cerrar">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
+    </button>
+  </div>
+  <div class="modal__body">
+    <section class="fmt">
+      <h3 class="fmt__name">Cartola Excel <span class="fmt__tag">entrada</span></h3>
+      <p class="fmt__desc">
+        Archivos <code>.xlsx</code> y <code>.xls</code>. Las columnas se detectan automáticamente
+        por el nombre de su cabecera, así que funcionan cartolas de distintos bancos sin configuración.
+        Se reconocen dos convenciones de importe:
+      </p>
+      <ul class="fmt__list">
+        <li>Columnas separadas de <strong>cargo</strong> y <strong>abono</strong> (Santander, Banco de Chile).</li>
+        <li>Una sola columna de <strong>monto</strong> con signo, donde el positivo es cargo (Falabella).</li>
+      </ul>
+      <p class="fmt__desc">
+        Cabeceras reconocidas: <code>fecha</code>, <code>detalle</code> / <code>descripción</code> /
+        <code>concepto</code>, <code>cargo</code>, <code>abono</code>, <code>monto</code> /
+        <code>importe</code> / <code>valor</code>, <code>saldo</code>.
+      </p>
+    </section>
+
+    <section class="fmt">
+      <h3 class="fmt__name">SWIFT MT940 <span class="fmt__tag">entrada y salida</span></h3>
+      <p class="fmt__desc">
+        Extracto bancario en texto etiquetado. Campos soportados:
+        <code>:20:</code> referencia, <code>:21:</code> referencia relacionada,
+        <code>:25:</code> cuenta, <code>:28C:</code> número de extracto,
+        <code>:60F:</code> saldo inicial, <code>:61:</code> movimiento,
+        <code>:86:</code> narrativa (incluidos los subcampos <code>?20</code>–<code>?29</code>),
+        <code>:62F:</code> saldo final y <code>:64:</code> saldo disponible.
+      </p>
+      <p class="fmt__desc">Extensiones: <code>.txt</code> · <code>.sta</code> · <code>.mt940</code> · <code>.mt9</code> · <code>.swift</code></p>
+    </section>
+
+    <section class="fmt">
+      <h3 class="fmt__name">ISO 20022 camt.053 <span class="fmt__tag">entrada y salida</span></h3>
+      <p class="fmt__desc">
+        <em>BankToCustomerStatement</em> en XML. La generación produce
+        <code>camt.053.001.08</code>; la lectura acepta además las versiones
+        <code>.001.02</code> a <code>.001.11</code>, detectando el namespace del documento.
+      </p>
+      <p class="fmt__desc">
+        Se mapean cuenta e IBAN, BIC de la entidad, saldos <code>OPBD</code> / <code>CLBD</code> /
+        <code>CLAV</code>, y por cada movimiento el importe con su indicador
+        <code>CdtDbtInd</code>, fechas contable y valor, referencias y la información
+        de remesa <code>RmtInf/Ustrd</code>.
+      </p>
+    </section>
+
+    <p class="modal__foot">
+      Las cartolas Excel no traen saldo de apertura, por lo que se parte de cero y el saldo
+      de cierre se deriva del neto de los movimientos, manteniendo el archivo generado
+      internamente consistente.
+    </p>
+  </div>
+</dialog>
+
+<script src="{{ url_for('static', filename='js/app.js') }}?v=2"></script>
 </body>
 </html>

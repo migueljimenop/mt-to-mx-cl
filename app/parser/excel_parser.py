@@ -165,6 +165,13 @@ def _parse_date(value) -> Optional[date]:
     return None
 
 
+def _number_at(row: List, idx: Optional[int]) -> Optional[Decimal]:
+    """Number at ``idx``, or None if the column is absent or the row is short."""
+    if idx is None or idx >= len(row):
+        return None
+    return _to_number(row[idx])
+
+
 def _cell_string(value) -> str:
     if value is None:
         return ''
@@ -175,17 +182,29 @@ def _cell_string(value) -> str:
 # Metadata extraction (account / currency) from pre-header rows
 # ---------------------------------------------------------------------------
 
-def _extract_metadata(rows: List[List], header_idx: int) -> Tuple[str, str]:
-    """Return (account_id, currency) scanning the rows before the header."""
+def _col_letter(idx: int) -> str:
+    """Spreadsheet column label for a zero-based index (0 -> A, 26 -> AA)."""
+    label = ''
+    idx += 1
+    while idx:
+        idx, rem = divmod(idx - 1, 26)
+        label = chr(65 + rem) + label
+    return label
+
+
+def _extract_metadata(rows: List[List], header_idx: int) -> Tuple[str, str, bool]:
+    """Return (account_id, currency, currency_found) from the pre-header rows."""
     currency = DEFAULT_CURRENCY
+    currency_found = False
     account_id = 'NOTPROVIDED'
     for row in rows[:header_idx]:
         for c, cell in enumerate(row):
             if cell is None:
                 continue
             text = str(cell).lower()
-            if currency == DEFAULT_CURRENCY and ('pesos' in text or 'clp' in text):
+            if not currency_found and ('pesos' in text or 'clp' in text):
                 currency = 'CLP'
+                currency_found = True
             if 'cuenta' in text and ':' in text and account_id == 'NOTPROVIDED':
                 owned = text.split(':', 1)[1].strip()
                 candidate = owned or ''
@@ -197,7 +216,61 @@ def _extract_metadata(rows: List[List], header_idx: int) -> Tuple[str, str]:
                             break
                 if candidate and account_id == 'NOTPROVIDED':
                     account_id = candidate
-    return account_id, currency
+    return account_id, currency, currency_found
+
+
+# ---------------------------------------------------------------------------
+# Reporting: how the sheet was read, and what had to be assumed
+# ---------------------------------------------------------------------------
+
+_ROLE_LABEL = {
+    'date':        'Fecha del movimiento',
+    'description': 'Detalle',
+    'debit':       'Cargo',
+    'credit':      'Abono',
+    'amount':      'Monto con signo',
+    'balance':     'Saldo',
+}
+
+
+def _describe_field_map(header: List, cols: dict) -> List[dict]:
+    """Describe which spreadsheet column was read as which role."""
+    described = []
+    for role, idx in sorted(cols.items(), key=lambda kv: kv[1]):
+        raw = header[idx] if idx < len(header) else None
+        described.append({
+            'role': role,
+            'label': _ROLE_LABEL.get(role, role),
+            'column': _col_letter(idx),
+            'header': _cell_string(raw),
+            'used': role != 'balance',
+        })
+    return described
+
+
+def _describe_assumptions(cols: dict, currency: str, currency_found: bool,
+                          account_id: str) -> List[str]:
+    """List the values the parser had to invent, in the UI's language."""
+    notes = [
+        'La cartola no declara saldo de apertura: se asume 0 y el saldo de '
+        'cierre se deriva del neto de los movimientos.',
+        'Las fechas de los saldos se toman del primer y del último movimiento.',
+        'El origen no trae código de operación: cada movimiento se emite como '
+        'NTRF (transferencia).',
+    ]
+    if 'balance' in cols:
+        notes.append(
+            'La columna «Saldo» del archivo no se utiliza: los saldos se '
+            'recalculan a partir de los movimientos.'
+        )
+    if not currency_found:
+        notes.append(f'No se encontró la moneda en el archivo: se asume {currency}.')
+    if account_id == 'NOTPROVIDED':
+        notes.append(
+            'No se encontró el número de cuenta: se emite NOTPROVIDED, valor '
+            'admitido por el estándar cuando la cuenta no está disponible.'
+        )
+    return notes
 
 
 # ---------------------------------------------------------------------------
@@ -231,7 +304,7 @@ class ExcelParser:
             if role and role not in cols:
                 cols[role] = idx
 
-        account_id, currency = _extract_metadata(rows, header_idx)
+        account_id, currency, currency_found = _extract_metadata(rows, header_idx)
 
         warnings: List[str] = []
         transactions: List[Transaction] = []
@@ -253,10 +326,13 @@ class ExcelParser:
                 warnings=warnings,
             )
 
-        today = date.today()
-        opening = Balance('C', today, currency, Decimal('0'), 'OPBD')
+        # Date the derived balances to the period the cartola actually covers,
+        # not to today: downstream the camt.053 statement period (FrToDt) is
+        # taken from these two dates.
+        txn_dates = [t.value_date for t in transactions]
+        opening = Balance('C', min(txn_dates), currency, Decimal('0'), 'OPBD')
         ind = 'D' if net < 0 else 'C'
-        closing = Balance(ind, today, currency, abs(net), 'CLBD')
+        closing = Balance(ind, max(txn_dates), currency, abs(net), 'CLBD')
 
         ref = (account_id or 'NOTPROVIDED').replace(' ', '-')[:16] or 'NOTPROVIDED'
         stmt = Statement(
@@ -278,11 +354,23 @@ class ExcelParser:
         return ParseResult(
             statements=[stmt], raw_text=filename, filename=filename,
             errors=[], warnings=warnings,
+            meta={
+                'header_row': header_idx + 1,
+                'field_map': _describe_field_map(header, cols),
+                'assumptions': _describe_assumptions(
+                    cols, currency, currency_found, account_id
+                ),
+            },
         )
 
     def _parse_row(self, row: List, cols: dict, lineno: int, ccy: str,
                    warnings: List[str]) -> Tuple[Optional[Transaction], Decimal]:
-        """Parse one data row into a Transaction. Returns (txn, signed_amount)."""
+        """Parse one data row into a Transaction.
+
+        Returns (txn, balance_effect) where balance_effect is the amount signed
+        by how it moves the account balance: positive for credits, negative for
+        debits.
+        """
         date_idx = cols.get('date')
         if date_idx is None or date_idx >= len(row):
             return None, Decimal('0')
@@ -293,16 +381,17 @@ class ExcelParser:
         indicator: Optional[str] = None
         amount: Optional[Decimal] = None
 
-        per_col = cols.get('debit') or cols.get('credit')
-        if per_col is not None:
-            debit = _to_number(row[cols['debit']]) if 'debit' in cols else None
-            credit = _to_number(row[cols['credit']]) if 'credit' in cols else None
+        # Membership test, not truthiness: a cargo/abono column sitting at index
+        # 0 is a valid position and must not read as "no such column".
+        if 'debit' in cols or 'credit' in cols:
+            debit = _number_at(row, cols.get('debit'))
+            credit = _number_at(row, cols.get('credit'))
             if debit:
                 indicator, amount = 'D', abs(debit)
             elif credit:
                 indicator, amount = 'C', abs(credit)
-        elif 'amount' in cols and cols['amount'] < len(row):
-            raw = _to_number(row[cols['amount']])
+        elif 'amount' in cols:
+            raw = _number_at(row, cols.get('amount'))
             if raw:
                 indicator = 'D' if raw > 0 else 'C'
                 amount = abs(raw)
@@ -313,7 +402,10 @@ class ExcelParser:
         desc_idx = cols.get('description')
         narrative = _cell_string(row[desc_idx]) if desc_idx is not None else ''
 
-        signed = amount if indicator == 'D' else -amount
+        # Signed by its effect on the balance: a credit raises it, a debit lowers
+        # it. This keeps the derived closing balance consistent with the emitted
+        # :61: lines (closing = opening + credits - debits).
+        signed = -amount if indicator == 'D' else amount
 
         txn = Transaction(
             value_date=d,

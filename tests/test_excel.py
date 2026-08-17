@@ -59,9 +59,9 @@ class TestFalabella:
 
     def test_closing_equals_net(self):
         s = self.r.statements[0]
-        # 23728 + 4093 - 141281 = -113460 → debit closing
+        # closing = opening + credits - debits = 0 + 141281 - (23728 + 4093)
         assert s.closing_balance.amount == Decimal('113460')
-        assert s.closing_balance.indicator == 'D'
+        assert s.closing_balance.indicator == 'C'
         assert s.opening_balance.amount == Decimal('0')
 
 
@@ -215,3 +215,84 @@ class TestRoutes:
                         data={'file': (io.BytesIO(b'not excel'), 'bad.xlsx'), 'target': 'xml'},
                         content_type='multipart/form-data')
         assert r.status_code == 422
+
+# ---------------------------------------------------------------------------
+# Balance consistency: the derived closing balance must agree with the
+# transactions it is emitted alongside (closing = opening + credits - debits).
+# ---------------------------------------------------------------------------
+
+class TestClosingBalanceConsistency:
+
+    @pytest.mark.parametrize('fixture', [
+        'excel_falabella.xlsx',
+        'excel_santander.xlsx',
+        'excel_chile.xlsx',
+    ])
+    def test_closing_matches_transaction_net(self, parser, fixture):
+        stmt = parser.parse(fixture, read_fixture_bytes(fixture)).statements[0]
+
+        opening = stmt.opening_balance
+        signed_opening = opening.amount if opening.indicator == 'C' else -opening.amount
+        net = sum(
+            (t.amount if t.indicator == 'C' else -t.amount for t in stmt.transactions),
+            signed_opening,
+        )
+
+        closing = stmt.closing_balance
+        signed_closing = closing.amount if closing.indicator == 'C' else -closing.amount
+        assert signed_closing == net
+
+
+class TestDerivedBalanceDates:
+    """Derived balances must be dated to the cartola's own period, because the
+    camt.053 statement period (FrToDt) is taken from them."""
+
+    def test_balance_dates_span_the_transactions(self, parser):
+        stmt = parser.parse('excel_santander.xlsx',
+                            read_fixture_bytes('excel_santander.xlsx')).statements[0]
+        dates = [t.value_date for t in stmt.transactions]
+        assert stmt.opening_balance.date == min(dates)
+        assert stmt.closing_balance.date == max(dates)
+
+    def test_balance_dates_are_not_today(self, parser):
+        from datetime import date as _date
+        stmt = parser.parse('excel_falabella.xlsx',
+                            read_fixture_bytes('excel_falabella.xlsx')).statements[0]
+        assert stmt.closing_balance.date == max(t.value_date for t in stmt.transactions)
+        assert stmt.opening_balance.date != _date.today() or \
+            min(t.value_date for t in stmt.transactions) == _date.today()
+
+
+class TestColumnPositionEdgeCases:
+
+    def _book(self, header, rows):
+        import openpyxl
+        from io import BytesIO
+        w = openpyxl.Workbook(); ws = w.active
+        ws.append(header)
+        for r in rows:
+            ws.append(r)
+        buf = BytesIO(); w.save(buf)
+        return buf.getvalue()
+
+    def test_debit_column_at_index_zero(self, parser):
+        """A cargo column in column A must not read as 'no cargo column'."""
+        data = self._book(
+            ['Cargos', 'Fecha', 'Detalle'],
+            [[5000, '02-06-2025', 'GIRO'], [1500, '03-06-2025', 'COMISION']],
+        )
+        stmt = parser.parse('cargo_primero.xlsx', data).statements[0]
+        assert [t.indicator for t in stmt.transactions] == ['D', 'D']
+        assert [t.amount for t in stmt.transactions] == [Decimal('5000'), Decimal('1500')]
+
+    def test_short_rows_do_not_raise(self, parser):
+        """Rows shorter than the header must be skipped, not crash."""
+        data = self._book(
+            ['Fecha', 'Detalle', 'Cargos', 'Abonos'],
+            [['02-06-2025', 'COMPLETA', 900, None],
+             ['03-06-2025', 'CORTA'],
+             ['04-06-2025', 'OTRA', None, 400]],
+        )
+        result = parser.parse('filas_cortas.xlsx', data)
+        assert result.errors == []
+        assert len(result.statements[0].transactions) == 2

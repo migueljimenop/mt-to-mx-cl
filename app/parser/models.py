@@ -87,12 +87,15 @@ class Statement:
 
 @dataclass
 class ParseResult:
-    """Top-level result of parsing an MT940 file."""
+    """Top-level result of parsing a statement file."""
     statements: List[Statement]
     raw_text: str
     filename: str
     errors: List[str] = field(default_factory=list)
     warnings: List[str] = field(default_factory=list)
+    # Free-form, parser-specific detail for the UI: how the source was
+    # interpreted (column mapping) and which values had to be assumed.
+    meta: dict = field(default_factory=dict)
 
     def to_dict(self) -> dict:
         return {
@@ -101,4 +104,5 @@ class ParseResult:
             'statements': [s.to_dict() for s in self.statements],
             'errors': self.errors,
             'warnings': self.warnings,
+            'meta': self.meta,
         }
