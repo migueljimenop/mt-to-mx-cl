@@ -175,6 +175,30 @@ body {
   flex-wrap: wrap;
 }
 
+/* ---- Target format selector ---- */
+.target-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 16px;
+  flex-wrap: wrap;
+}
+.target-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-text);
+}
+.target-select {
+  font-family: var(--font);
+  font-size: 13px;
+  padding: 8px 12px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  color: var(--color-text);
+  cursor: pointer;
+}
+
 /* ---- Buttons ---- */
 .btn {
   display: inline-flex;
@@ -443,6 +467,7 @@ body {
 }
 .mode-tab__badge--mt  { background: #e8f0fc; color: var(--color-primary); border: 1px solid #c3d4f5; }
 .mode-tab__badge--iso { background: #d4f0e0; color: var(--color-success); border: 1px solid #a8dfc0; }
+.mode-tab__badge--excel { background: #e8f5e9; color: #2e7d32; border: 1px solid #a5d6a7; }
 .mode-tab__arrow { color: var(--color-muted); flex-shrink: 0; }
 .mode-tab--active .mode-tab__arrow { color: var(--color-primary); }
 .mode-tab__label {

@@ -24,6 +24,13 @@ const MODE = {
     convertLoadingText: 'Generando MT940...',
     downloadLabel:    'Descargar MT940 .txt',
   },
+  'excel': {
+    parseEndpoint:    '/api/parse-excel',
+    convertEndpoint:  '/api/convert-excel',
+    parseLoadingText: 'Analizando cartola Excel...',
+    convertLoadingText: 'Convirtiendo cartola...',
+    downloadLabel:    'Descargar archivo',
+  },
 };
 
 // ---------------------------------------------------------------------------
@@ -32,6 +39,7 @@ const MODE = {
 const state = {
   'mt-to-xml': { file: null },
   'xml-to-mt': { file: null },
+  'excel':     { file: null },
 };
 
 // ---------------------------------------------------------------------------
@@ -47,8 +55,10 @@ const stmtsCont    = document.getElementById('statements-container');
 // Mode tabs
 const tabMtToXml  = document.getElementById('tab-mt-to-xml');
 const tabXmlToMt  = document.getElementById('tab-xml-to-mt');
+const tabExcel    = document.getElementById('tab-excel');
 const panelMtToXml = document.getElementById('panel-mt-to-xml');
 const panelXmlToMt = document.getElementById('panel-xml-to-mt');
+const panelExcel   = document.getElementById('panel-excel');
 
 // MT940 → XML panel
 const dzMt        = document.getElementById('dz-mt');
@@ -69,6 +79,17 @@ const fiXmlSize   = document.getElementById('fi-xml-size');
 const fiXmlRemove = document.getElementById('fi-xml-remove');
 const btnXmlParse = document.getElementById('btn-xml-parse');
 const btnXmlDl    = document.getElementById('btn-xml-download');
+
+// Excel → MT940/XML panel
+const dzExcel       = document.getElementById('dz-excel');
+const fiExcel       = document.getElementById('fi-excel');
+const fiExcelInfo   = document.getElementById('fi-excel-info');
+const fiExcelName   = document.getElementById('fi-excel-name');
+const fiExcelSize   = document.getElementById('fi-excel-size');
+const fiExcelRemove = document.getElementById('fi-excel-remove');
+const btnExcelParse = document.getElementById('btn-excel-parse');
+const btnExcelDl    = document.getElementById('btn-excel-download');
+const xlTarget      = document.getElementById('xl-target');
 
 // ---------------------------------------------------------------------------
 // Utilities
@@ -107,10 +128,13 @@ function switchMode(mode) {
   tabMtToXml.setAttribute('aria-selected', mode === 'mt-to-xml');
   tabXmlToMt.classList.toggle('mode-tab--active', mode === 'xml-to-mt');
   tabXmlToMt.setAttribute('aria-selected', mode === 'xml-to-mt');
+  tabExcel.classList.toggle('mode-tab--active', mode === 'excel');
+  tabExcel.setAttribute('aria-selected', mode === 'excel');
 
   // Panels
   panelMtToXml.classList.toggle('hidden', mode !== 'mt-to-xml');
   panelXmlToMt.classList.toggle('hidden', mode !== 'xml-to-mt');
+  panelExcel.classList.toggle('hidden', mode !== 'excel');
 
   clearMessages();
   hidePreview();
@@ -118,6 +142,7 @@ function switchMode(mode) {
 
 tabMtToXml.addEventListener('click', () => switchMode('mt-to-xml'));
 tabXmlToMt.addEventListener('click', () => switchMode('xml-to-mt'));
+tabExcel.addEventListener('click', () => switchMode('excel'));
 
 // ---------------------------------------------------------------------------
 // File handling (generic)
@@ -166,9 +191,14 @@ function setupDropZone(dz, fi, mode, nameEl, sizeEl, infoEl, parseBtn, dlBtn) {
 
 setupDropZone(dzMt,  fiMt,  'mt-to-xml', fiMtName,  fiMtSize,  fiMtInfo,  btnMtParse,  btnMtDl);
 setupDropZone(dzXml, fiXml, 'xml-to-mt', fiXmlName, fiXmlSize, fiXmlInfo, btnXmlParse, btnXmlDl);
+setupDropZone(dzExcel, fiExcel, 'excel', fiExcelName, fiExcelSize, fiExcelInfo, btnExcelParse, btnExcelDl);
 
 fiMtRemove.addEventListener('click',  () => clearFile('mt-to-xml', fiMt,  fiMtName,  fiMtSize,  fiMtInfo,  btnMtParse,  btnMtDl));
 fiXmlRemove.addEventListener('click', () => clearFile('xml-to-mt', fiXml, fiXmlName, fiXmlSize, fiXmlInfo, btnXmlParse, btnXmlDl));
+fiExcelRemove.addEventListener('click', () => clearFile('excel', fiExcel, fiExcelName, fiExcelSize, fiExcelInfo, btnExcelParse, btnExcelDl));
+
+// Changing the target format invalidates a previously prepared download
+xlTarget.addEventListener('change', () => hidePreview());
 
 // ---------------------------------------------------------------------------
 // Messages
@@ -318,6 +348,7 @@ async function doParseOrConvert(action, mode, parseBtn, dlBtn) {
 
   const fd = new FormData();
   fd.append('file', file);
+  if (mode === 'excel') fd.append('target', xlTarget.value);
 
   try {
     const res = await fetch(endpoint, { method: 'POST', body: fd });
@@ -371,3 +402,5 @@ btnMtParse.addEventListener('click',  () => doParseOrConvert('parse',   'mt-to-x
 btnMtDl.addEventListener('click',     () => doParseOrConvert('convert', 'mt-to-xml', btnMtParse,  btnMtDl));
 btnXmlParse.addEventListener('click', () => doParseOrConvert('parse',   'xml-to-mt', btnXmlParse, btnXmlDl));
 btnXmlDl.addEventListener('click',    () => doParseOrConvert('convert', 'xml-to-mt', btnXmlParse, btnXmlDl));
+btnExcelParse.addEventListener('click', () => doParseOrConvert('parse',   'excel', btnExcelParse, btnExcelDl));
+btnExcelDl.addEventListener('click',    () => doParseOrConvert('convert', 'excel', btnExcelParse, btnExcelDl));

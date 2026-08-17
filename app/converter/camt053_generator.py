@@ -87,10 +87,6 @@ class Camt053Generator:
         grp = _e(parent, 'GrpHdr')
         _et(grp, 'MsgId', str(uuid.uuid4()).replace('-', '')[:35])
         _et(grp, 'CreDtTm', _format_datetime())
-        _et(grp, 'MsgPgntn', '')  # Not used but present in some implementations
-
-        # MsgPgntn is optional — remove the empty element we just added
-        grp.remove(grp.find(f'{{{NS}}}MsgPgntn'))
 
     # ------------------------------------------------------------------
     # Statement

@@ -1,23 +1,25 @@
 from flask import Blueprint, jsonify, render_template, request, Response
 
 from .converter import Camt053Generator, MT940Generator
-from .parser import Camt053Parser, MT940Parser
+from .parser import Camt053Parser, ExcelParser, MT940Parser
 
 bp = Blueprint('main', __name__)
 
 _mt940_parser   = MT940Parser()
 _camt053_parser = Camt053Parser()
+_excel_parser   = ExcelParser()
 _camt053_gen    = Camt053Generator()
 _mt940_gen      = MT940Generator()
 
 MT940_EXTENSIONS = {'txt', 'sta', 'mt940', 'mt9', 'swift'}
 XML_EXTENSIONS   = {'xml', 'xsd'}
+EXCEL_EXTENSIONS = {'xlsx', 'xls'}
 
 
-def _read_upload(allowed_exts: set) -> tuple:
+def _get_file(allowed_exts: set):
     """
-    Read and decode the uploaded file.
-    Returns (text, filename, error_response_or_None).
+    Validate and return the uploaded file object.
+    Returns (file_obj, filename, error_response_or_None).
     """
     if 'file' not in request.files:
         return None, None, (jsonify({'error': 'No se proporcionó ningún archivo.'}), 400)
@@ -32,6 +34,17 @@ def _read_upload(allowed_exts: set) -> tuple:
             jsonify({'error': f'Tipo de archivo no permitido. Esperado: {", ".join(sorted(allowed_exts))}'}),
             400,
         )
+    return file, file.filename, None
+
+
+def _read_upload(allowed_exts: set) -> tuple:
+    """
+    Read and decode the uploaded file as text.
+    Returns (text, filename, error_response_or_None).
+    """
+    file, filename, err = _get_file(allowed_exts)
+    if err:
+        return None, None, err
 
     try:
         raw_bytes = file.read()
@@ -42,7 +55,22 @@ def _read_upload(allowed_exts: set) -> tuple:
     except Exception as exc:
         return None, None, (jsonify({'error': f'No se pudo leer el archivo: {exc}'}), 400)
 
-    return text, file.filename, None
+    return text, filename, None
+
+
+def _read_upload_bytes(allowed_exts: set) -> tuple:
+    """
+    Read the uploaded file as raw bytes (for binary formats like Excel).
+    Returns (bytes, filename, error_response_or_None).
+    """
+    file, filename, err = _get_file(allowed_exts)
+    if err:
+        return None, None, err
+    try:
+        raw_bytes = file.read()
+    except Exception as exc:
+        return None, None, (jsonify({'error': f'No se pudo leer el archivo: {exc}'}), 400)
+    return raw_bytes, filename, None
 
 
 def _build_download(content: str, filename: str, mimetype: str) -> Response:
@@ -131,3 +159,46 @@ def api_convert_xml():
     mt940_output = _mt940_gen.generate(result)
     base = filename.rsplit('.', 1)[0] if '.' in filename else filename
     return _build_download(mt940_output, f'{base}_mt940.txt', 'text/plain')
+
+
+# ---------------------------------------------------------------------------
+# Excel (cartola) routes
+# ---------------------------------------------------------------------------
+
+@bp.route('/api/parse-excel', methods=['POST'])
+def api_parse_excel():
+    """Parse an Excel cartola → JSON preview."""
+    data, filename, err = _read_upload_bytes(EXCEL_EXTENSIONS)
+    if err:
+        return err
+
+    result = _excel_parser.parse(filename, data)
+    return jsonify(result.to_dict())
+
+
+@bp.route('/api/convert-excel', methods=['POST'])
+def api_convert_excel():
+    """Convert an Excel cartola → MT940 (.txt) or camt.053 XML (.xml) download.
+
+    The target format is chosen via the 'target' form field ('mt940' | 'xml').
+    """
+    data, filename, err = _read_upload_bytes(EXCEL_EXTENSIONS)
+    if err:
+        return err
+
+    result = _excel_parser.parse(filename, data)
+    if result.errors or not result.statements:
+        return jsonify({
+            'error': 'El parseo del archivo Excel falló.',
+            'details': result.errors,
+        }), 422
+
+    target = (request.form.get('target') or 'xml').lower()
+    base = filename.rsplit('.', 1)[0] if '.' in filename else filename
+
+    if target == 'mt940':
+        output = _mt940_gen.generate(result)
+        return _build_download(output, f'{base}_mt940.txt', 'text/plain')
+
+    output = _camt053_gen.generate(result)
+    return _build_download(output, f'{base}_camt053.xml', 'application/xml')
